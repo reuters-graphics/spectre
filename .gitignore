@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Spectre output (audit artifacts land here in consumer projects)
+.spectre/
+
+# Generated / secret config
+browserstack.yml
+.env
+.env.local
+
+# BrowserStack SDK / Playwright incidental output
+log/
+test-results/
+playwright-report/
+playwright-output/
+
+# OS / editor
+.DS_Store
+*.log
