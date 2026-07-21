@@ -34,16 +34,64 @@ optional dependency — install it too if you want pixel-diff badges in the repo
 
 ---
 
-## 🚦 Define your routes
+## 🚦 Point it at your site (routes are discovered for you)
 
-Spectre audits **your** routes, so each project supplies its own list. Copy the
-starter and edit it:
+You don't hand-maintain a route list. Run the wizard once — it asks for a base
+URL and how to find routes, and saves a `spectre.config.json`:
+
+```bash
+npx spectre setup
+```
+
+Then just run the audit:
+
+```bash
+npx spectre local
+```
+
+Spectre finds the pages to audit by **discovery**:
+
+- **`auto`** *(default)* — if the site has a `sitemap.xml`, use it; otherwise
+  **crawl from the homepage**.
+- **`crawl`** — start at `/` and follow same-origin links. Only pages that are
+  publicly **linked** get audited, so unlinked pages (sharecards, drafts) are
+  never touched.
+- **`sitemap`** — read `sitemap.xml`.
+- **`manual`** — you provide an explicit routes file (see below).
+
+Embeds and sharecards are excluded by default (`/embeds/**`, `/sharecards/**`);
+add specific ones back with `extraRoutes` when you want them.
+
+### `spectre.config.json`
+
+```jsonc
+{
+  "baseUrl": "http://localhost:4173",   // dev server, preview, or a live URL
+  "discover": "auto",                    // auto | crawl | sitemap | manual
+  "crawlDepth": 2,                        // link-hops from the homepage
+  "exclude": ["/embeds/**", "/sharecards/**"],
+  "waitFor": "body",                     // default selector to wait for per page
+  "extraRoutes": [                        // pages to audit by hand (e.g. an embed)
+    // { "path": "/embeds/en/bracket/", "label": "embed-bracket", "waitFor": "main" }
+  ],
+  "overrides": {                          // tweak a discovered route when needed
+    // "/knockouts/": { "settleMs": 1500, "waitFor": ".bracket" }
+  }
+}
+```
+
+Discovery works against **anything reachable over HTTP** — a dev server, a local
+preview of the build, a deployed preview, or a live production page. Auditing the
+built or live site is often more useful than dev.
+
+### Manual routes (opt-out)
+
+Prefer to curate the list yourself? Set `"discover": "manual"` (or just don't
+create a config) and provide a routes file:
 
 ```bash
 cp node_modules/@reuters-graphics/spectre/routes.example.ts ./spectre.routes.ts
 ```
-
-A routes file just exports a `ROUTES` array:
 
 ```ts
 // spectre.routes.ts
@@ -53,15 +101,12 @@ export const ROUTES = [
     path: '/about/',
     label: 'about',
     waitFor: '.content',
-    // optional: extra screenshots after an interaction
     interactions: [
       { name: 'menu-open', click: '[data-test="menu-toggle"]', pause: 400 },
     ],
   },
 ];
 ```
-
-Each route declares:
 
 | Field | Purpose |
 | --- | --- |
@@ -71,33 +116,33 @@ Each route declares:
 | `settleMs` | *(optional)* extra settle time for data-heavy pages |
 | `interactions` | *(optional)* post-load clicks, each producing an extra screenshot |
 
-Spectre finds your routes automatically, in this order:
-
-1. `SPECTRE_ROUTES=./path/to/routes.ts` env var
-2. `spectre.routes.ts` / `.js` in your project root
-3. `spectre.config.ts` / `.js` in your project root
-4. `"spectre": { "routes": "./path/to/routes.ts" }` in `package.json`
-
-Routes whose `path` still contains `<…>` placeholder markers are skipped at
-runtime with a warning — handy for slugs you haven't filled in yet.
+An explicit routes file is found via `SPECTRE_ROUTES`, `spectre.routes.{ts,js}`,
+`spectre.config.{ts,js}`, or a `package.json` `"spectre": { "routes" }` field.
 
 ---
 
 ## ▶️ Run it
 
 ```bash
-# Point at whatever you want to audit — a local dev server or a deployed preview
-AUDIT_BASE_URL=http://localhost:4173 npx spectre local
-# auto-opens the report when it finishes
+npx spectre setup     # once — base URL + discovery mode
+npx spectre local     # discover routes → audit → report → post-mortem
 ```
 
-That single command **cleans → audits → aggregates → runs the post-mortem**.
+Or skip config and pass a base URL for a one-off run:
+
+```bash
+AUDIT_BASE_URL=http://localhost:4173 npx spectre local
+```
+
+`local` **cleans → discovers → audits → aggregates → runs the post-mortem**, then
+opens the report.
 
 ### Commands
 
 | Command | Does |
 | --- | --- |
 | `npx spectre` | Interactive menu |
+| `npx spectre setup` | Configure base URL + route discovery (writes `spectre.config.json`) |
 | `npx spectre local` | Run the audit (auto-cleans + reports + post-mortem) |
 | `npx spectre show-report` | Reopen the last report in your browser |
 | `npx spectre postmortem` | Re-generate the LLM triage prompt for the last sweep |

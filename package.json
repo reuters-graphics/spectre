@@ -11,6 +11,7 @@
     ".": "./index.js",
     "./report": "./report.js",
     "./postmortem": "./postmortem.js",
+    "./discover": "./discover.js",
     "./config": "./playwright.local.config.ts",
     "./routes-example": "./routes.example.ts",
     "./package.json": "./package.json"
@@ -25,6 +26,7 @@
     "index.js",
     "report.js",
     "postmortem.js",
+    "discover.js",
     "audit.spec.ts",
     "routes.example.ts",
     "playwright.local.config.ts",

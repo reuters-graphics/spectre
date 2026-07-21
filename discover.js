@@ -1,0 +1,245 @@
+#!/usr/bin/env node
+/**
+ * discover.js — route discovery for Spectre.
+ *
+ * Turns a running site into a list of routes to audit, so projects don't have
+ * to hand-maintain a routes file. Three sources:
+ *
+ *   - 'sitemap' : fetch <baseUrl>/sitemap.xml and read every <loc>
+ *   - 'crawl'   : start at '/', follow same-origin links reachable from the
+ *                 homepage to a small depth (so unlinked pages — sharecards,
+ *                 drafts, embeds — are never touched)
+ *   - 'auto'    : sitemap if present, otherwise crawl (the default)
+ *
+ * Discovery runs in the CLI (never inside the Playwright spec). The CLI writes
+ * the resolved list to a generated module and points the spec at it.
+ *
+ * No third-party deps — uses global fetch (Node 18+).
+ */
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a glob (`*`, `**`) to a RegExp anchored to the whole path. */
+function globToRegExp(glob) {
+  const re = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex specials
+    .replace(/\*\*/g, '\u0000') // placeholder for **
+    .replace(/\*/g, '[^/]*') // * = anything but a slash
+    .replace(/\u0000/g, '.*'); // ** = anything incl. slashes
+  return new RegExp(`^${re}$`);
+}
+
+function matchesAny(pathname, globs) {
+  return globs.some((g) => globToRegExp(g).test(pathname));
+}
+
+/** Normalise a URL path: ensure leading slash, drop hash + query. */
+function cleanPath(pathname) {
+  let p = pathname || '/';
+  const hash = p.indexOf('#');
+  if (hash >= 0) p = p.slice(0, hash);
+  const q = p.indexOf('?');
+  if (q >= 0) p = p.slice(0, q);
+  if (!p.startsWith('/')) p = '/' + p;
+  return p;
+}
+
+/** Derive a readable label from a path. '/' → 'home', '/a/b/' → 'a-b'. */
+function labelFromPath(pathname) {
+  const trimmed = pathname.replace(/^\/+|\/+$/g, '');
+  if (!trimmed) return 'home';
+  return trimmed
+    .replace(/\.[a-z0-9]+$/i, '') // drop file extension
+    .replace(/[^a-z0-9]+/gi, '-')
+    .toLowerCase();
+}
+
+/** Extensions we never treat as auditable HTML pages. */
+const ASSET_EXT =
+  /\.(png|jpe?g|gif|svg|webp|avif|ico|css|js|mjs|json|xml|txt|pdf|zip|mp4|webm|mov|woff2?|ttf|eot|map)$/i;
+
+function isAuditablePath(pathname) {
+  if (ASSET_EXT.test(pathname)) return false;
+  return true;
+}
+
+async function fetchText(url, timeoutMs = 15000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: 'follow',
+      headers: { 'User-Agent': 'spectre-discover' },
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sitemap
+// ---------------------------------------------------------------------------
+async function fromSitemap(baseUrl) {
+  const origin = new URL(baseUrl).origin;
+  const sitemapUrl = new URL('/sitemap.xml', origin).href;
+  const xml = await fetchText(sitemapUrl);
+  if (!xml) return null; // signal "not found" so caller can fall back to crawl
+
+  const locs = [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map(
+    (m) => m[1]
+  );
+  const paths = [];
+  for (const loc of locs) {
+    try {
+      const u = new URL(loc);
+      if (u.origin !== origin) continue; // same-origin only
+      paths.push(cleanPath(u.pathname));
+    } catch {
+      /* skip malformed */
+    }
+  }
+  return paths;
+}
+
+// ---------------------------------------------------------------------------
+// Crawl (BFS from the homepage, same-origin, link-reachable only)
+// ---------------------------------------------------------------------------
+async function fromCrawl(baseUrl, { depth = 2, maxPages = 100 } = {}) {
+  const start = new URL(baseUrl);
+  const origin = start.origin;
+  const startPath = cleanPath(start.pathname || '/');
+
+  const seen = new Set([startPath]);
+  const found = [startPath];
+  let frontier = [startPath];
+
+  for (let d = 0; d < depth && found.length < maxPages; d++) {
+    const next = [];
+    for (const p of frontier) {
+      if (found.length >= maxPages) break;
+      const html = await fetchText(new URL(p, origin).href);
+      if (!html) continue;
+
+      const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(
+        (m) => m[1]
+      );
+      for (const href of hrefs) {
+        if (/^(mailto:|tel:|javascript:|#)/i.test(href)) continue;
+        let u;
+        try {
+          u = new URL(href, new URL(p, origin));
+        } catch {
+          continue;
+        }
+        if (u.origin !== origin) continue; // same-origin only
+        const cp = cleanPath(u.pathname);
+        if (!isAuditablePath(cp)) continue;
+        if (seen.has(cp)) continue;
+        seen.add(cp);
+        found.push(cp);
+        next.push(cp);
+        if (found.length >= maxPages) break;
+      }
+    }
+    frontier = next;
+    if (frontier.length === 0) break;
+  }
+
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Discover routes for a site.
+ *
+ * @param {object} opts
+ * @param {string} opts.baseUrl       Origin (+ optional base path) to discover from
+ * @param {'auto'|'crawl'|'sitemap'} [opts.mode='auto']
+ * @param {number} [opts.crawlDepth=2]
+ * @param {number} [opts.maxPages=100]
+ * @param {string[]} [opts.exclude]   Glob patterns to drop (default embeds + sharecards)
+ * @param {string[]} [opts.include]   If set, keep ONLY paths matching these globs
+ * @param {string} [opts.waitFor='body']  Default waitFor for discovered routes
+ * @param {Record<string, object>} [opts.overrides]  Per-path overrides
+ * @param {Array<object>} [opts.extraRoutes]  Explicit routes appended verbatim
+ * @returns {Promise<Array<{path:string,label:string,waitFor:string}>>}
+ */
+export async function discoverRoutes(opts = {}) {
+  const {
+    baseUrl,
+    mode = 'auto',
+    crawlDepth = 2,
+    maxPages = 100,
+    exclude = ['/embeds/**', '/sharecards/**'],
+    include = [],
+    waitFor = 'body',
+    overrides = {},
+    extraRoutes = [],
+  } = opts;
+
+  if (!baseUrl) {
+    throw new Error('discoverRoutes: `baseUrl` is required.');
+  }
+
+  let paths = null;
+  let usedMode = mode;
+
+  if (mode === 'sitemap' || mode === 'auto') {
+    paths = await fromSitemap(baseUrl);
+    if (paths && paths.length) {
+      usedMode = 'sitemap';
+    } else if (mode === 'sitemap') {
+      paths = []; // explicit sitemap request but none found
+    } else {
+      paths = null; // auto → fall through to crawl
+    }
+  }
+
+  if (paths === null) {
+    paths = await fromCrawl(baseUrl, { depth: crawlDepth, maxPages });
+    usedMode = 'crawl';
+  }
+
+  // Filter: auditable, include (if any), exclude, dedupe.
+  const kept = [];
+  const seen = new Set();
+  for (const p of paths) {
+    if (!isAuditablePath(p)) continue;
+    if (include.length && !matchesAny(p, include)) continue;
+    if (exclude.length && matchesAny(p, exclude)) continue;
+    if (seen.has(p)) continue;
+    seen.add(p);
+    kept.push(p);
+  }
+  kept.sort((a, b) => (a === '/' ? -1 : b === '/' ? 1 : a.localeCompare(b)));
+
+  const routes = kept.map((p) => ({
+    path: p,
+    label: labelFromPath(p),
+    waitFor,
+    ...(overrides[p] || {}),
+  }));
+
+  // Append explicit extra routes (e.g. a hand-picked embed), de-duping by path.
+  for (const extra of extraRoutes) {
+    if (!extra || !extra.path) continue;
+    if (routes.some((r) => r.path === extra.path)) continue;
+    routes.push({
+      label: labelFromPath(extra.path),
+      waitFor,
+      ...extra,
+    });
+  }
+
+  return { routes, mode: usedMode };
+}
