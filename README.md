@@ -46,7 +46,8 @@ npx spectre setup
 Then just run the audit:
 
 ```bash
-npx spectre local
+npx spectre setup     # once — base URL + how to find routes
+npx spectre           # audit
 ```
 
 Spectre finds the pages to audit by **discovery**:
@@ -125,35 +126,38 @@ An explicit routes file is found via `SPECTRE_ROUTES`, `spectre.routes.{ts,js}`,
 
 ```bash
 npx spectre setup     # once — base URL + discovery mode
-npx spectre local     # discover routes → audit → report → post-mortem
+npx spectre           # discover routes → audit → report → post-mortem
 ```
 
-Or skip config and pass a base URL for a one-off run:
+Since local emulation is the only mode, bare **`spectre`** runs the audit (and
+drops into `setup` automatically on first run). Or pass a base URL for a one-off:
 
 ```bash
-AUDIT_BASE_URL=http://localhost:4173 npx spectre local
+AUDIT_BASE_URL=http://localhost:4173 npx spectre
 ```
 
-`local` **cleans → discovers → audits → aggregates → runs the post-mortem**, then
+`spectre` **cleans → discovers → audits → aggregates → runs the post-mortem**, then
 opens the report.
 
 ### Commands
 
 | Command | Does |
 | --- | --- |
-| `npx spectre` | Interactive menu |
+| `npx spectre` | Run the audit (or setup on first run) |
 | `npx spectre setup` | Configure base URL + route discovery (writes `spectre.config.json`) |
-| `npx spectre local` | Run the audit (auto-cleans + reports + post-mortem) |
+| `npx spectre menu` | Interactive menu |
 | `npx spectre show-report` | Reopen the last report in your browser |
 | `npx spectre postmortem` | Re-generate the LLM triage prompt for the last sweep |
 | `npx spectre clean` | Wipe the output folder |
+
+`npx spectre local` still works as an alias of the default run.
 
 Add scripts to your `package.json` if you like:
 
 ```json
 {
   "scripts": {
-    "audit": "spectre local",
+    "audit": "spectre",
     "audit:report": "spectre show-report"
   }
 }
@@ -208,15 +212,15 @@ rate-limits aggressively, tune the throttle + header knobs so 401/403/timeout
 noise doesn't look like real bugs:
 
 ```bash
-AUDIT_ROUTE_DELAY_MS=5000   npx spectre local   # 5s pause between routes
-AUDIT_WORKERS=1             npx spectre local   # no parallelism at all
-AUDIT_NAV_RETRIES=4         npx spectre local   # more retries per route
+AUDIT_ROUTE_DELAY_MS=5000   npx spectre   # 5s pause between routes
+AUDIT_WORKERS=1             npx spectre   # no parallelism at all
+AUDIT_NAV_RETRIES=4         npx spectre   # more retries per route
 
 # Spoof headers / simulate an internal IP:
-AUDIT_EXTRA_HEADERS='{"X-Forwarded-For":"10.0.0.1"}' npx spectre local
+AUDIT_EXTRA_HEADERS='{"X-Forwarded-For":"10.0.0.1"}' npx spectre
 
 # HTTP-Basic protected preview:
-AUDIT_BASIC_AUTH='user:s3cret' npx spectre local
+AUDIT_BASIC_AUTH='user:s3cret' npx spectre
 ```
 
 ### All env knobs
@@ -251,7 +255,7 @@ desktop Chrome/Safari/Firefox) lives in `playwright.local.config.ts`. Target a
 single device with a Playwright pass-through flag:
 
 ```bash
-npx spectre local -- --project=iphone-15
+npx spectre -- --project=iphone-15
 ```
 
 ---

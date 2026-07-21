@@ -458,6 +458,25 @@ function runClean() {
 }
 
 // ---------------------------------------------------------------------------
+// Default action for bare `spectre` — just run the audit. Since local is the
+// only mode, there's no reason to make the user type `spectre local`. If the
+// project isn't configured yet (no config, no routes file, no base URL), fall
+// into the setup wizard so the first run is guided.
+// ---------------------------------------------------------------------------
+async function runDefault() {
+  const configured =
+    fs.existsSync(CONFIG_JSON) ||
+    !!resolveRoutesPath() ||
+    !!process.env.AUDIT_BASE_URL;
+  if (configured) return runLocalAudit([]);
+
+  p.intro(color.bgCyan(color.black(' spectre ')));
+  p.log.info("No Spectre config found yet — let's set it up.");
+  p.outro('');
+  return runSetup();
+}
+
+// ---------------------------------------------------------------------------
 // Interactive menu
 // ---------------------------------------------------------------------------
 async function runMenu() {
@@ -603,7 +622,7 @@ async function runSetup() {
           discover === 'sitemap' ? 'read your sitemap' : 'discover routes'
         } from ${color.cyan(baseUrl)} and audit them.`,
       '',
-      `Next: ${color.cyan('npx spectre local')}`,
+      `Next: ${color.cyan('npx spectre')}`,
     ].join('\n'),
     'Setup complete'
   );
@@ -620,14 +639,16 @@ ${color.bold('👻 spectre')} — local cross-browser UI audit harness
 ${color.bold('Commands:')}
   ${color.cyan('setup')}       Interactive wizard — set a base URL + how routes are
               discovered (sitemap/crawl), saved to spectre.config.json.
-  ${color.cyan('local')}       Run the audit with Playwright emulated devices.
+  ${color.cyan('(none)')}      Running ${color.dim('spectre')} with no command runs the audit
+              (or setup on first run). Auto-cleans + reports + post-mortem.
+  ${color.cyan('local')}       Alias of the default — run the audit.
               Auto-cleans + auto-reports + runs the post-mortem.
   ${color.cyan('show-report')} Open the last report in your browser via the built-in
               static server (like ${color.dim('playwright show-report')}).
   ${color.cyan('postmortem')}  Triage the last sweep into an LLM prompt + structured
-              JSON. Also runs automatically after ${color.dim('local')}.
+              JSON. Also runs automatically after each audit.
   ${color.cyan('clean')}       Wipe the output folder.
-  ${color.cyan('menu')}        Interactive menu (default with no args).
+  ${color.cyan('menu')}        Interactive menu.
   ${color.cyan('help')}        Show this message.
 
 ${color.bold('Routes:')} Spectre discovers your routes automatically — run
@@ -636,10 +657,10 @@ ${color.bold('Routes:')} Spectre discovers your routes automatically — run
   file (see ${color.dim('routes.example.ts')}) or set ${color.dim('SPECTRE_ROUTES')}.
 
 ${color.bold('Examples:')}
-  npx spectre                                  # interactive menu
+  npx spectre                                  # run the audit (setup on first run)
   npx spectre setup                            # configure discovery
-  npx spectre local                            # emulated-device sweep
-  AUDIT_BASE_URL=http://localhost:4173 npx spectre local
+  npx spectre menu                             # interactive menu
+  AUDIT_BASE_URL=http://localhost:4173 npx spectre
   npx spectre show-report                       # re-open last report
   npx spectre postmortem                        # standalone triage
 `);
@@ -654,6 +675,8 @@ const [, , subcommand, ...rest] = process.argv;
   try {
     switch (subcommand) {
       case undefined:
+        await runDefault();
+        break;
       case 'menu':
         await runMenu();
         break;
