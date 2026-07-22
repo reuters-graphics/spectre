@@ -87,7 +87,7 @@ function labelFromPath(pathname) {
 
 /** Extensions we never treat as auditable HTML pages. */
 const ASSET_EXT =
-  /\.(png|jpe?g|gif|svg|webp|avif|ico|css|js|mjs|json|xml|txt|pdf|zip|mp4|webm|mov|woff2?|ttf|eot|map)$/i;
+  /\.(png|jpe?g|gif|svg|webp|avif|ico|css|scss|sass|less|styl|js|mjs|cjs|ts|json|xml|txt|pdf|zip|mp4|webm|mov|woff2?|ttf|eot|map|wasm)$/i;
 
 function isAuditablePath(pathname) {
   if (ASSET_EXT.test(pathname)) return false;
@@ -157,9 +157,12 @@ async function fromCrawl(baseUrl, { depth = 1, maxPages = 100 } = {}) {
       const html = await fetchText(new URL(p, origin).href);
       if (!html) continue;
 
-      const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(
-        (m) => m[1]
-      );
+      // Only follow real anchor links (<a href>). Matching bare `href=` also
+      // catches <link rel="stylesheet">, preloads, icons, canonical, etc. —
+      // which are assets, not pages (that's how /styles.scss crept in).
+      const hrefs = [
+        ...html.matchAll(/<a\b[^>]*?\shref\s*=\s*["']([^"']+)["']/gi),
+      ].map((m) => m[1]);
       for (const rawHref of hrefs) {
         const href = (rawHref || '').trim();
         if (!href) continue;
