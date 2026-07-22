@@ -341,7 +341,7 @@ async function runLocalAudit(rest) {
     try {
       result = await discoverRoutes({
         baseUrl,
-        mode: config.discover || 'crawl',
+        mode: config.discover || 'auto',
         crawlDepth: config.crawlDepth ?? 1,
         maxPages: config.maxPages ?? 100,
         exclude: config.exclude ?? ['/embeds/**', '/sharecards/**'],
@@ -590,12 +590,12 @@ async function runSetup() {
     })
   );
 
-  // Discovery defaults to crawling the homepage — only publicly-linked pages
-  // get audited. Power users can hand-edit `discover` in spectre.config.json
-  // to "auto" (sitemap first), "sitemap", or "manual"; the wizard keeps
-  // whatever's already set rather than asking everyone to choose.
+  // Discovery defaults to `auto`: use the site's sitemap.xml if it has one,
+  // otherwise audit just the URL you gave (no fragile link-crawling). Power
+  // users can hand-edit `discover` in spectre.config.json to "single",
+  // "sitemap", "crawl", or "manual"; the wizard keeps whatever's already set.
   // Embeds + sharecards are excluded by default (edit `exclude` to change).
-  const discover = existing.discover || 'crawl';
+  const discover = existing.discover || 'auto';
   const exclude = existing.exclude ?? ['/embeds/**', '/sharecards/**'];
 
   const config = {
@@ -617,8 +617,8 @@ async function runSetup() {
     [
       discover === 'manual' ?
         `Provide a routes file (see ${color.dim('routes.example.ts')}).`
-      : `Spectre will crawl ${color.cyan(baseUrl)} from the homepage and audit\n` +
-        `every publicly-linked page (embeds & sharecards skipped).`,
+      : `Spectre will check ${color.cyan(baseUrl)} for a sitemap and audit those\n` +
+        `pages — or just this URL if there's no sitemap (embeds & sharecards skipped).`,
       '',
       `Next: ${color.cyan('npx spectre')}`,
     ].join('\n'),
@@ -674,8 +674,8 @@ function help() {
 ${color.bold('👻 spectre')} — local cross-browser UI audit harness
 
 ${color.bold('Commands:')}
-  ${color.cyan('setup')}       Interactive wizard — set a base URL + how routes are
-              discovered (sitemap/crawl), saved to spectre.config.json.
+  ${color.cyan('setup')}       Interactive wizard — set the base URL to audit,
+              saved to spectre.config.json.
   ${color.cyan('devices')}     Add / remove emulated devices from the audit matrix.
   ${color.cyan('(none)')}      Running ${color.dim('spectre')} with no command runs the audit
               (or setup on first run). Auto-cleans + reports + post-mortem.
@@ -689,10 +689,10 @@ ${color.bold('Commands:')}
   ${color.cyan('menu')}        Interactive menu.
   ${color.cyan('help')}        Show this message.
 
-${color.bold('Routes:')} Spectre discovers your routes automatically — run
-  ${color.cyan('spectre setup')} to pick a base URL and discovery mode (sitemap
-  if present, else a homepage crawl). You can still provide an explicit routes
-  file (see ${color.dim('routes.example.ts')}) or set ${color.dim('SPECTRE_ROUTES')}.
+${color.bold('Routes:')} Spectre finds pages automatically — run ${color.cyan('spectre setup')} to set a
+  base URL. It uses the site's sitemap.xml if there is one, otherwise it audits
+  just that URL. Set ${color.dim('discover')} in spectre.config.json to ${color.dim('single')} / ${color.dim('sitemap')} /
+  ${color.dim('crawl')} / ${color.dim('manual')} to change, or provide your own routes file.
 
 ${color.bold('Examples:')}
   npx spectre                                  # run the audit (setup on first run)

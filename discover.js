@@ -204,7 +204,9 @@ async function fromCrawl(baseUrl, { depth = 1, maxPages = 100 } = {}) {
  *
  * @param {object} opts
  * @param {string} opts.baseUrl       Origin (+ optional base path) to discover from
- * @param {'auto'|'crawl'|'sitemap'} [opts.mode='auto']
+ * @param {'auto'|'single'|'sitemap'|'crawl'} [opts.mode='auto']  auto = sitemap
+ *   if present, else just the given URL. single = only the given URL.
+ *   sitemap = sitemap only. crawl = follow homepage links (opt-in).
  * @param {number} [opts.crawlDepth=1]
  * @param {number} [opts.maxPages=100]
  * @param {string[]} [opts.exclude]   Glob patterns to drop (default embeds + sharecards)
@@ -232,24 +234,35 @@ export async function discoverRoutes(opts = {}) {
   }
 
   const basePath = basePathOf(baseUrl);
+  const selfPath = cleanPath(new URL(baseUrl).pathname || '/');
 
-  let paths = null;
+  // Resolve the source paths (origin-absolute) per mode:
+  //   auto    → sitemap if the site has one, else just the given URL
+  //   sitemap → sitemap only (empty if none)
+  //   single  → just the given URL
+  //   crawl   → follow homepage links (opt-in; least predictable)
+  let paths;
   let usedMode = mode;
 
-  if (mode === 'sitemap' || mode === 'auto') {
-    paths = await fromSitemap(baseUrl);
-    if (paths && paths.length) {
-      usedMode = 'sitemap';
-    } else if (mode === 'sitemap') {
-      paths = []; // explicit sitemap request but none found
-    } else {
-      paths = null; // auto → fall through to crawl
-    }
-  }
-
-  if (paths === null) {
+  if (mode === 'crawl') {
     paths = await fromCrawl(baseUrl, { depth: crawlDepth, maxPages });
     usedMode = 'crawl';
+  } else if (mode === 'single') {
+    paths = [selfPath];
+    usedMode = 'single';
+  } else if (mode === 'sitemap') {
+    paths = (await fromSitemap(baseUrl)) || [];
+    usedMode = 'sitemap';
+  } else {
+    // auto: prefer a sitemap; otherwise audit only the URL you gave.
+    const sm = await fromSitemap(baseUrl);
+    if (sm && sm.length) {
+      paths = sm;
+      usedMode = 'sitemap';
+    } else {
+      paths = [selfPath];
+      usedMode = 'single';
+    }
   }
 
   // Paths are origin-absolute. Keep only those within the base path, then make

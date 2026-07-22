@@ -53,16 +53,18 @@ site is often more useful than dev.
 
 ## 🚦 How routes are found
 
-You don't hand-maintain a route list. By default Spectre **crawls from the
-homepage** — it starts at `/`, follows same-origin links, and only audits pages
-that are publicly **linked**. Unlinked pages (sharecards, drafts) are never
-touched, and embeds / sharecards are excluded by default.
+You don't hand-maintain a route list. By default (**`auto`**) Spectre checks the
+site for a `sitemap.xml`: if there is one, it audits those pages (a multi-page
+site); if there isn't, it audits **just the URL you gave it**. No fragile link
+crawling unless you ask for it. Embeds / sharecards are excluded by default.
 
-Prefer a different strategy? Set `discover` in the config:
+Set `discover` in the config to change strategy:
 
-- **`crawl`** *(default)* — follow links from the homepage.
-- **`auto`** — use `sitemap.xml` if the site has one, else crawl.
+- **`auto`** *(default)* — sitemap if present, else just the given URL.
+- **`single`** — only the given URL, always.
 - **`sitemap`** — read `sitemap.xml` only.
+- **`crawl`** — follow same-origin links from the homepage (opt-in; the least
+  predictable, since it only finds what's linked).
 - **`manual`** — you provide an explicit routes file (see below).
 
 ### `spectre.config.json`
@@ -72,8 +74,8 @@ Written by `spectre setup`; edit it any time.
 ```jsonc
 {
   "baseUrl": "http://localhost:4173",   // dev server, preview, or a live URL
-  "discover": "crawl",                   // crawl | auto | sitemap | manual
-  "crawlDepth": 1,                        // link-hops from the homepage (default 1)
+  "discover": "auto",                    // auto | single | sitemap | crawl | manual
+  "crawlDepth": 1,                        // link-hops from homepage (crawl mode only)
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page
   "ignoreHosts": [],                      // extra hostnames to drop from network
