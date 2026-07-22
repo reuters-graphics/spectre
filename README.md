@@ -50,25 +50,25 @@ npx spectre setup     # once — base URL + how to find routes
 npx spectre           # audit
 ```
 
-Spectre finds the pages to audit by **discovery**:
+Spectre finds the pages to audit by **crawling from the homepage** — it starts
+at `/` and follows same-origin links, so only pages that are publicly **linked**
+get audited. Unlinked pages (sharecards, drafts) are never touched, and embeds /
+sharecards are excluded by default.
 
-- **`auto`** *(default)* — if the site has a `sitemap.xml`, use it; otherwise
-  **crawl from the homepage**.
-- **`crawl`** — start at `/` and follow same-origin links. Only pages that are
-  publicly **linked** get audited, so unlinked pages (sharecards, drafts) are
-  never touched.
-- **`sitemap`** — read `sitemap.xml`.
+Add specific pages back with `extraRoutes` when you want them. Prefer a
+different strategy? Set `discover` in the config:
+
+- **`crawl`** *(default)* — follow links from the homepage.
+- **`auto`** — use `sitemap.xml` if the site has one, else crawl.
+- **`sitemap`** — read `sitemap.xml` only.
 - **`manual`** — you provide an explicit routes file (see below).
-
-Embeds and sharecards are excluded by default (`/embeds/**`, `/sharecards/**`);
-add specific ones back with `extraRoutes` when you want them.
 
 ### `spectre.config.json`
 
 ```jsonc
 {
   "baseUrl": "http://localhost:4173",   // dev server, preview, or a live URL
-  "discover": "auto",                    // auto | crawl | sitemap | manual
+  "discover": "crawl",                   // crawl | auto | sitemap | manual
   "crawlDepth": 2,                        // link-hops from the homepage
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page

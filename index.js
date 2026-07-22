@@ -323,7 +323,7 @@ async function runLocalAudit(rest) {
     try {
       result = await discoverRoutes({
         baseUrl,
-        mode: config.discover || 'auto',
+        mode: config.discover || 'crawl',
         crawlDepth: config.crawlDepth ?? 2,
         maxPages: config.maxPages ?? 100,
         exclude: config.exclude ?? ['/embeds/**', '/sharecards/**'],
@@ -489,7 +489,7 @@ async function runMenu() {
         {
           value: 'setup',
           label: '🛠  Setup',
-          hint: 'pick a base URL + route discovery, save spectre.config.json',
+          hint: 'pick a base URL, save spectre.config.json',
         },
         {
           value: 'local',
@@ -553,57 +553,27 @@ async function runSetup() {
     })
   );
 
-  const discover = cancelIf(
-    await p.select({
-      message: 'How should Spectre find routes?',
-      options: [
-        {
-          value: 'auto',
-          label: 'Auto — sitemap if present, else crawl the homepage',
-          hint: 'recommended',
-        },
-        {
-          value: 'crawl',
-          label: 'Crawl from the homepage',
-          hint: 'only publicly-linked pages',
-        },
-        { value: 'sitemap', label: 'Read sitemap.xml' },
-        { value: 'manual', label: 'Manual — I provide a routes file' },
-      ],
-      initialValue: existing.discover || 'auto',
+  const skipNonPublic = cancelIf(
+    await p.confirm({
+      message: 'Skip embeds & sharecards (non-public pages)?',
+      initialValue: true,
     })
   );
 
-  let crawlDepth = existing.crawlDepth ?? 2;
-  if (discover === 'auto' || discover === 'crawl') {
-    const d = cancelIf(
-      await p.text({
-        message: 'Crawl depth (link-hops from the homepage)',
-        placeholder: String(crawlDepth),
-        defaultValue: String(crawlDepth),
-        validate: (v) =>
-          /^\d+$/.test(String(v)) ? undefined : 'Must be a whole number',
-      })
-    );
-    crawlDepth = parseInt(d, 10);
-  }
-
-  let exclude = existing.exclude ?? ['/embeds/**', '/sharecards/**'];
-  if (discover !== 'manual') {
-    const skipNonPublic = cancelIf(
-      await p.confirm({
-        message: 'Skip embeds & sharecards (non-public pages)?',
-        initialValue: true,
-      })
-    );
-    exclude = skipNonPublic ? ['/embeds/**', '/sharecards/**'] : [];
-  }
+  // Discovery defaults to crawling the homepage — only publicly-linked pages
+  // get audited. Power users can hand-edit `discover` in spectre.config.json
+  // to "auto" (sitemap first), "sitemap", or "manual"; the wizard keeps
+  // whatever's already set rather than asking everyone to choose.
+  const discover = existing.discover || 'crawl';
+  const exclude =
+    existing.exclude ??
+    (skipNonPublic ? ['/embeds/**', '/sharecards/**'] : []);
 
   const config = {
     baseUrl,
     discover,
-    ...(discover === 'auto' || discover === 'crawl' ? { crawlDepth } : {}),
-    exclude,
+    crawlDepth: existing.crawlDepth ?? 2,
+    exclude: skipNonPublic ? exclude : [],
     waitFor: existing.waitFor ?? 'body',
     extraRoutes: existing.extraRoutes ?? [],
     overrides: existing.overrides ?? {},
@@ -618,9 +588,8 @@ async function runSetup() {
     [
       discover === 'manual' ?
         `Provide a routes file (see ${color.dim('routes.example.ts')}).`
-      : `Spectre will ${
-          discover === 'sitemap' ? 'read your sitemap' : 'discover routes'
-        } from ${color.cyan(baseUrl)} and audit them.`,
+      : `Spectre will crawl ${color.cyan(baseUrl)} from the homepage and audit\n` +
+        `every publicly-linked page.`,
       '',
       `Next: ${color.cyan('npx spectre')}`,
     ].join('\n'),
