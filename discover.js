@@ -35,14 +35,20 @@ function matchesAny(pathname, globs) {
   return globs.some((g) => globToRegExp(g).test(pathname));
 }
 
-/** Normalise a URL path: ensure leading slash, drop hash + query. */
+/** Normalise a URL path: ensure leading slash, drop query + fragment.
+ *  Handles fragments that arrive pre-encoded as %23 (common in SPA anchor
+ *  links like href="#eu-a" that some frameworks emit as "%23eu-a"), so
+ *  same-page anchors collapse to the real page instead of becoming fake
+ *  routes that 404. */
 function cleanPath(pathname) {
   let p = pathname || '/';
-  const hash = p.indexOf('#');
-  if (hash >= 0) p = p.slice(0, hash);
-  const q = p.indexOf('?');
-  if (q >= 0) p = p.slice(0, q);
+  // Cut at the first query/fragment marker — literal or percent-encoded.
+  for (const marker of ['#', '?', '%23', '%3F', '%3f']) {
+    const i = p.indexOf(marker);
+    if (i >= 0) p = p.slice(0, i);
+  }
   if (!p.startsWith('/')) p = '/' + p;
+  if (p === '') p = '/';
   return p;
 }
 
@@ -130,8 +136,13 @@ async function fromCrawl(baseUrl, { depth = 2, maxPages = 100 } = {}) {
       const hrefs = [...html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)].map(
         (m) => m[1]
       );
-      for (const href of hrefs) {
-        if (/^(mailto:|tel:|javascript:|#)/i.test(href)) continue;
+      for (const rawHref of hrefs) {
+        const href = (rawHref || '').trim();
+        if (!href) continue;
+        // Skip non-navigational + fragment-only links. `%23…` is a pre-encoded
+        // `#…` — same-page anchors on SPAs — which must never become routes.
+        if (/^(mailto:|tel:|javascript:|data:|#)/i.test(href)) continue;
+        if (/^%23/i.test(href)) continue;
         let u;
         try {
           u = new URL(href, new URL(p, origin));
@@ -140,6 +151,7 @@ async function fromCrawl(baseUrl, { depth = 2, maxPages = 100 } = {}) {
         }
         if (u.origin !== origin) continue; // same-origin only
         const cp = cleanPath(u.pathname);
+        if (cp.includes('#') || /%23/i.test(cp)) continue; // belt-and-braces
         if (!isAuditablePath(cp)) continue;
         if (seen.has(cp)) continue;
         seen.add(cp);
