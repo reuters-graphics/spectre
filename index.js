@@ -584,27 +584,19 @@ async function runSetup() {
     })
   );
 
-  const skipNonPublic = cancelIf(
-    await p.confirm({
-      message: 'Skip embeds & sharecards (non-public pages)?',
-      initialValue: true,
-    })
-  );
-
   // Discovery defaults to crawling the homepage — only publicly-linked pages
   // get audited. Power users can hand-edit `discover` in spectre.config.json
   // to "auto" (sitemap first), "sitemap", or "manual"; the wizard keeps
   // whatever's already set rather than asking everyone to choose.
+  // Embeds + sharecards are excluded by default (edit `exclude` to change).
   const discover = existing.discover || 'crawl';
-  const exclude =
-    existing.exclude ??
-    (skipNonPublic ? ['/embeds/**', '/sharecards/**'] : []);
+  const exclude = existing.exclude ?? ['/embeds/**', '/sharecards/**'];
 
   const config = {
     baseUrl,
     discover,
     crawlDepth: existing.crawlDepth ?? 1,
-    exclude: skipNonPublic ? exclude : [],
+    exclude,
     waitFor: existing.waitFor ?? 'body',
     extraRoutes: existing.extraRoutes ?? [],
     overrides: existing.overrides ?? {},
@@ -620,7 +612,7 @@ async function runSetup() {
       discover === 'manual' ?
         `Provide a routes file (see ${color.dim('routes.example.ts')}).`
       : `Spectre will crawl ${color.cyan(baseUrl)} from the homepage and audit\n` +
-        `every publicly-linked page.`,
+        `every publicly-linked page (embeds & sharecards skipped).`,
       '',
       `Next: ${color.cyan('npx spectre')}`,
     ].join('\n'),
