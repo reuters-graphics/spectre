@@ -383,6 +383,12 @@ async function runLocalAudit(rest) {
     extraEnv.SPECTRE_DEVICES = config.devices.join(',');
   }
 
+  // Extra hostnames to drop from network-failure reporting (added to the
+  // built-in analytics/telemetry list).
+  if (Array.isArray(config.ignoreHosts) && config.ignoreHosts.length) {
+    extraEnv.SPECTRE_IGNORE_HOSTS = config.ignoreHosts.join(',');
+  }
+
   p.log.info(
     color.dim('Running audit — Playwright emulated devices, no account needed.')
   );

@@ -321,6 +321,60 @@ async function runAxe(page: Page): Promise<unknown[]> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Analytics / telemetry beacons fail (often ERR_ABORTED) as a matter of course
+// — they're fire-and-forget and get cancelled on navigation. They are never
+// actionable UI bugs, so we drop them from the network-failure report. Extend
+// with SPECTRE_IGNORE_HOSTS (comma-separated hostnames).
+// ---------------------------------------------------------------------------
+const DEFAULT_IGNORE_HOSTS = [
+  'google-analytics.com',
+  'analytics.google.com',
+  'googletagmanager.com',
+  'doubleclick.net',
+  'googlesyndication.com',
+  'facebook.net',
+  'connect.facebook.net',
+  'scorecardresearch.com',
+  'quantserve.com',
+  'quantcount.com',
+  'hotjar.com',
+  'hotjar.io',
+  'segment.io',
+  'segment.com',
+  'sentry.io',
+  'nr-data.net',
+  'newrelic.com',
+  'bat.bing.com',
+  'chartbeat.com',
+  'chartbeat.net',
+  'parsely.com',
+  'clarity.ms',
+  'speedcurve.com',
+  'amplitude.com',
+  'mixpanel.com',
+  'permutive.com',
+  'krxd.net',
+  'demdex.net',
+  'omtrdc.net',
+  'adobedtm.com',
+];
+const IGNORE_HOSTS = [
+  ...DEFAULT_IGNORE_HOSTS,
+  ...(process.env.SPECTRE_IGNORE_HOSTS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+];
+function isIgnoredHost(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname;
+    return IGNORE_HOSTS.some((d) => host === d || host.endsWith('.' + d) || host.includes(d));
+  } catch {
+    return false;
+  }
+}
+
 function attachListeners(page: Page) {
   const consoleLog: ConsoleEntry[] = [];
   const networkFailures: NetworkFailure[] = [];
@@ -449,18 +503,25 @@ for (const route of ROUTES) {
     const errors: string[] = [];
     const screenshots: string[] = [];
 
+    let pageOk = false;
+    let httpStatus = 0;
     try {
       // Set consent cookies BEFORE navigation so the banner never renders.
       await suppressCookieBanners(page, BASE_URL);
 
       const navResult = await navigateWithRetry(page, url, 60_000);
       errors.push(...navResult.errors);
+      httpStatus = navResult.response?.status() ?? 0;
+      pageOk =
+        !navResult.accessDenied && httpStatus >= 200 && httpStatus < 400;
 
-      if (navResult.accessDenied) {
-        // Skip the rest of the audit for this route — selectors / axe will
-        // just timeout on an error page, polluting the report with noise.
+      if (!pageOk) {
+        // The page didn't load properly (access denied, 4xx/5xx, or no
+        // response). Screenshot it for context, but DON'T wait for selectors,
+        // run axe/overflow, or record console — an error page produces only
+        // noise (false a11y violations, 403 console spam, etc.).
         errors.push(
-          'access denied — skipping selector wait, screenshots only.'
+          `HTTP ${httpStatus || 'no response'} — page did not load; skipping audit checks (console / a11y / network not recorded).`
         );
       } else {
         // Belt-and-braces: also dismiss visible banners + CSS-hide stragglers.
@@ -493,12 +554,12 @@ for (const route of ROUTES) {
       errors.push(`screenshot failed: ${(err as Error).message}`);
     }
 
-    // Overflow + a11y sweeps
-    const overflow = await collectOverflow(page).catch(() => []);
-    const axeViolations = await runAxe(page).catch(() => []);
+    // Overflow + a11y sweeps — only on a page that actually loaded.
+    const overflow = pageOk ? await collectOverflow(page).catch(() => []) : [];
+    const axeViolations = pageOk ? await runAxe(page).catch(() => []) : [];
 
-    // Interactions (extra screenshots)
-    for (const inter of route.interactions ?? []) {
+    // Interactions (extra screenshots) — only when the page loaded.
+    for (const inter of pageOk ? (route.interactions ?? []) : []) {
       try {
         if (inter.click) {
           const el = page.locator(inter.click).first();
@@ -535,8 +596,11 @@ for (const route of ROUTES) {
       route: route.label,
       url,
       loadedAt: new Date().toISOString(),
-      console: consoleLog,
-      networkFailures,
+      // On a page that didn't load, console/network are error-page noise — drop
+      // them. Otherwise filter out analytics/telemetry beacon failures.
+      console: pageOk ? consoleLog : [],
+      networkFailures:
+        pageOk ? networkFailures.filter((f) => !isIgnoredHost(f.url)) : [],
       overflow,
       axeViolations,
       screenshots,

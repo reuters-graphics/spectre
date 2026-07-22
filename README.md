@@ -76,6 +76,9 @@ Written by `spectre setup`; edit it any time.
   "crawlDepth": 1,                        // link-hops from the homepage (default 1)
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page
+  "ignoreHosts": [],                      // extra hostnames to drop from network
+                                          // failures (analytics/telemetry beacons
+                                          // are dropped by default)
   "devices": [                            // emulated devices to audit (omit = all 8)
     // "iphone-15", "desktop-chrome", "desktop-safari"
   ],
@@ -253,6 +256,20 @@ When the audit detects an access-denied response it records a structured error
 (`HTTP 401/403/407`, `429`, `ERR_ABORTED`, `ERR_CONNECTION_RESET`, …) **and**
 stops waiting for app-specific selectors on that route, so the rest of the
 report stays meaningful.
+
+### Noise control
+
+To keep the report free of false positives, Spectre:
+
+- **Skips audit checks on pages that don't load** — if a route returns a non-2xx
+  status (403, 404, 5xx) or no response, Spectre screenshots it for context but
+  records **no** console errors, a11y violations, overflow or network failures
+  from it (an error page is all noise). The route shows a single `HTTP <status>`
+  error instead.
+- **Drops analytics/telemetry beacon failures** — Google Analytics, GTM,
+  Facebook, Sentry, New Relic, etc. fail as a matter of course (fire-and-forget
+  requests aborted on navigation) and are never real bugs. Add your own with
+  `ignoreHosts` in the config.
 
 ---
 
