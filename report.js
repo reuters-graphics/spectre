@@ -940,12 +940,9 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
       : ''
     }
     <a href="report.md" target="_blank" rel="noopener">📝 Markdown</a>
-    <a href="report.json" target="_blank" rel="noopener">📦 JSON</a>
-    <a href="audit.log" target="_blank" rel="noopener">📜 Log</a>
     ${
       postmortem ?
-        `<a href="postmortem-prompt.md" target="_blank" rel="noopener">🧠 Post-mortem prompt</a>
-         <a href="postmortem-data.json" target="_blank" rel="noopener">🧠 Post-mortem JSON</a>`
+        `<a href="postmortem-prompt.md" target="_blank" rel="noopener">🧠 Post-mortem prompt</a>`
       : ''
     }
   </nav>
