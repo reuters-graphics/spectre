@@ -5,8 +5,8 @@
 
 Spectre runs a small [Playwright](https://playwright.dev) audit across every
 route × emulated device you care about and aggregates the findings into a
-single browsable HTML report — plus a Markdown summary, a CI-friendly JSON,
-and an LLM-ready post-mortem prompt.
+single browsable HTML report — plus a Markdown summary, a CI-friendly JSON, and
+an LLM-ready post-mortem prompt.
 
 It emulates iPhone / iPad / Pixel / Galaxy viewports and desktop
 Chromium / WebKit / Firefox — no accounts, no paid seats, runs on your machine.
@@ -34,29 +34,31 @@ optional dependency — install it too if you want pixel-diff badges in the repo
 
 ---
 
-## 🚦 Point it at your site (routes are discovered for you)
-
-You don't hand-maintain a route list. Run the wizard once — it asks for a base
-URL and how to find routes, and saves a `spectre.config.json`:
+## 🚀 Quickstart
 
 ```bash
-npx spectre setup
+npx spectre setup     # once — asks for a base URL, saves spectre.config.json
+npx spectre           # discover routes → audit → report → post-mortem
 ```
 
-Then just run the audit:
+That's it. `spectre` **cleans → discovers routes → audits every route × device →
+aggregates the report → runs the post-mortem**, then opens the report in your
+browser. On a brand-new project, bare `spectre` drops you into `setup` first.
 
-```bash
-npx spectre setup     # once — base URL + how to find routes
-npx spectre           # audit
-```
+Point it at a dev server, a local preview of the build, a deployed preview, or a
+live production page — anything reachable over HTTP. Auditing the built or live
+site is often more useful than dev.
 
-Spectre finds the pages to audit by **crawling from the homepage** — it starts
-at `/` and follows same-origin links, so only pages that are publicly **linked**
-get audited. Unlinked pages (sharecards, drafts) are never touched, and embeds /
-sharecards are excluded by default.
+---
 
-Add specific pages back with `extraRoutes` when you want them. Prefer a
-different strategy? Set `discover` in the config:
+## 🚦 How routes are found
+
+You don't hand-maintain a route list. By default Spectre **crawls from the
+homepage** — it starts at `/`, follows same-origin links, and only audits pages
+that are publicly **linked**. Unlinked pages (sharecards, drafts) are never
+touched, and embeds / sharecards are excluded by default.
+
+Prefer a different strategy? Set `discover` in the config:
 
 - **`crawl`** *(default)* — follow links from the homepage.
 - **`auto`** — use `sitemap.xml` if the site has one, else crawl.
@@ -64,6 +66,8 @@ different strategy? Set `discover` in the config:
 - **`manual`** — you provide an explicit routes file (see below).
 
 ### `spectre.config.json`
+
+Written by `spectre setup`; edit it any time.
 
 ```jsonc
 {
@@ -84,14 +88,13 @@ different strategy? Set `discover` in the config:
 }
 ```
 
-Discovery works against **anything reachable over HTTP** — a dev server, a local
-preview of the build, a deployed preview, or a live production page. Auditing the
-built or live site is often more useful than dev.
+Paths in `exclude` / `extraRoutes` / `overrides` are **relative to `baseUrl`** —
+so for `https://host/preview/abc/`, use `/knockouts/`, not the full prefix.
 
 ### Manual routes (opt-out)
 
-Prefer to curate the list yourself? Set `"discover": "manual"` (or just don't
-create a config) and provide a routes file:
+Prefer to curate the list yourself? Set `"discover": "manual"` and provide a
+routes file:
 
 ```bash
 cp node_modules/@reuters-graphics/spectre/routes.example.ts ./spectre.routes.ts
@@ -114,49 +117,50 @@ export const ROUTES = [
 
 | Field | Purpose |
 | --- | --- |
-| `path` | URL path, joined with `AUDIT_BASE_URL` at runtime |
+| `path` | URL path, appended to `baseUrl` at runtime |
 | `label` | Human-readable name (used in report + screenshot filenames) |
 | `waitFor` | CSS selector that must be visible before screenshotting |
 | `settleMs` | *(optional)* extra settle time for data-heavy pages |
 | `interactions` | *(optional)* post-load clicks, each producing an extra screenshot |
 
-An explicit routes file is found via `SPECTRE_ROUTES`, `spectre.routes.{ts,js}`,
+A routes file is found via `SPECTRE_ROUTES`, `spectre.routes.{ts,js}`,
 `spectre.config.{ts,js}`, or a `package.json` `"spectre": { "routes" }` field.
 
 ---
 
-## ▶️ Run it
+## 📱 Devices
+
+Spectre ships an 8-device matrix: **iPhone 15 · iPhone SE · Pixel 7 ·
+Galaxy S9+ · iPad Mini · Desktop Chrome · Desktop Safari · Desktop Firefox.**
+
+Trim it to just the devices you care about (faster sweeps) with:
 
 ```bash
-npx spectre setup     # once — base URL + discovery mode
-npx spectre           # discover routes → audit → report → post-mortem
+npx spectre devices          # multi-select, saved to spectre.config.json
 ```
 
-Since local emulation is the only mode, bare **`spectre`** runs the audit (and
-drops into `setup` automatically on first run). Or pass a base URL for a one-off:
+Or set `"devices"` in the config directly. Omit it to run all eight. For a quick
+one-off you can also target a single device with a Playwright pass-through flag:
 
 ```bash
-AUDIT_BASE_URL=http://localhost:4173 npx spectre
+npx spectre -- --project=iphone-15
 ```
 
-`spectre` **cleans → discovers → audits → aggregates → runs the post-mortem**, then
-opens the report.
+---
 
-### Commands
+## ⌨️ Commands
 
 | Command | Does |
 | --- | --- |
 | `npx spectre` | Run the audit (or setup on first run) |
-| `npx spectre setup` | Configure base URL + route discovery (writes `spectre.config.json`) |
-| `npx spectre devices` | Add / remove emulated devices from the audit matrix |
+| `npx spectre setup` | Configure base URL + route discovery |
+| `npx spectre devices` | Add / remove emulated devices from the matrix |
 | `npx spectre menu` | Interactive menu |
 | `npx spectre show-report` | Reopen the last report in your browser |
 | `npx spectre postmortem` | Re-generate the LLM triage prompt for the last sweep |
 | `npx spectre clean` | Wipe the output folder |
 
-`npx spectre local` still works as an alias of the default run.
-
-Add scripts to your `package.json` if you like:
+Handy `package.json` scripts:
 
 ```json
 {
@@ -171,7 +175,7 @@ Add scripts to your `package.json` if you like:
 
 ## 📂 Output
 
-Everything lands in **`.spectre/`** inside your project (not in `node_modules`):
+Everything lands in **`.spectre/`** inside your project (never in `node_modules`):
 
 ```
 .spectre/
@@ -186,8 +190,8 @@ Everything lands in **`.spectre/`** inside your project (not in `node_modules`):
 └── playwright-report/      Playwright's native HTML report
 ```
 
-Add `.spectre/` to your `.gitignore` (or commit it if you want a permanent
-trail). Redirect it anywhere with `SPECTRE_OUTPUT_DIR=/some/dir`.
+Add `.spectre/` to your `.gitignore` (or commit it for a permanent trail).
+Redirect it anywhere with `SPECTRE_OUTPUT_DIR=/some/dir`.
 
 ---
 
@@ -211,7 +215,7 @@ one-click **Copy prompt** button. Re-run standalone any time with
 
 ## 🛡️ Auditing a host that returns "access denied"
 
-If the preview origin is IP-allowlisted, VPN-only, password-protected, or just
+If the origin is IP-allowlisted, VPN-only, password-protected, or just
 rate-limits aggressively, tune the throttle + header knobs so 401/403/timeout
 noise doesn't look like real bugs:
 
@@ -231,7 +235,7 @@ AUDIT_BASIC_AUTH='user:s3cret' npx spectre
 
 | Env | Default | Purpose |
 | --- | --- | --- |
-| `AUDIT_BASE_URL` | *(spec default)* | Origin prepended to every route |
+| `AUDIT_BASE_URL` | *(config `baseUrl`)* | Origin (+ base path) prepended to every route |
 | `AUDIT_WORKERS` | `1` | Parallel Playwright workers — keep at 1 for rate-limited hosts |
 | `AUDIT_RETRIES` | `1` | Playwright test-level retries |
 | `AUDIT_NAV_TIMEOUT_MS` | `90000` | Per-navigation timeout |
@@ -242,25 +246,13 @@ AUDIT_BASIC_AUTH='user:s3cret' npx spectre
 | `AUDIT_EXTRA_HEADERS` | — | JSON object merged into every request's headers |
 | `AUDIT_USER_AGENT` | — | Overrides the UA — useful if the origin sniffs Playwright |
 | `AUDIT_BASIC_AUTH` | — | `user:pass` for HTTP Basic protected previews |
-| `SPECTRE_ROUTES` | *(auto)* | Explicit path to your routes module |
 | `SPECTRE_OUTPUT_DIR` | `.spectre/` | Where audit artifacts are written |
+| `SPECTRE_ROUTES` | *(auto)* | Explicit path to a routes module |
 
 When the audit detects an access-denied response it records a structured error
 (`HTTP 401/403/407`, `429`, `ERR_ABORTED`, `ERR_CONNECTION_RESET`, …) **and**
 stops waiting for app-specific selectors on that route, so the rest of the
 report stays meaningful.
-
----
-
-## 🎛️ Which devices?
-
-The emulated device matrix (iPhone 15/SE, Pixel 7, Galaxy S9+, iPad Mini,
-desktop Chrome/Safari/Firefox) lives in `playwright.local.config.ts`. Target a
-single device with a Playwright pass-through flag:
-
-```bash
-npx spectre -- --project=iphone-15
-```
 
 ---
 
