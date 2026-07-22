@@ -69,7 +69,7 @@ different strategy? Set `discover` in the config:
 {
   "baseUrl": "http://localhost:4173",   // dev server, preview, or a live URL
   "discover": "crawl",                   // crawl | auto | sitemap | manual
-  "crawlDepth": 2,                        // link-hops from the homepage
+  "crawlDepth": 1,                        // link-hops from the homepage (default 1)
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page
   "extraRoutes": [                        // pages to audit by hand (e.g. an embed)

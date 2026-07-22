@@ -117,7 +117,7 @@ async function fromSitemap(baseUrl) {
 // ---------------------------------------------------------------------------
 // Crawl (BFS from the homepage, same-origin, link-reachable only)
 // ---------------------------------------------------------------------------
-async function fromCrawl(baseUrl, { depth = 2, maxPages = 100 } = {}) {
+async function fromCrawl(baseUrl, { depth = 1, maxPages = 100 } = {}) {
   const start = new URL(baseUrl);
   const origin = start.origin;
   const startPath = cleanPath(start.pathname || '/');
@@ -177,7 +177,7 @@ async function fromCrawl(baseUrl, { depth = 2, maxPages = 100 } = {}) {
  * @param {object} opts
  * @param {string} opts.baseUrl       Origin (+ optional base path) to discover from
  * @param {'auto'|'crawl'|'sitemap'} [opts.mode='auto']
- * @param {number} [opts.crawlDepth=2]
+ * @param {number} [opts.crawlDepth=1]
  * @param {number} [opts.maxPages=100]
  * @param {string[]} [opts.exclude]   Glob patterns to drop (default embeds + sharecards)
  * @param {string[]} [opts.include]   If set, keep ONLY paths matching these globs
@@ -190,7 +190,7 @@ export async function discoverRoutes(opts = {}) {
   const {
     baseUrl,
     mode = 'auto',
-    crawlDepth = 2,
+    crawlDepth = 1,
     maxPages = 100,
     exclude = ['/embeds/**', '/sharecards/**'],
     include = [],

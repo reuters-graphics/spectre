@@ -324,7 +324,7 @@ async function runLocalAudit(rest) {
       result = await discoverRoutes({
         baseUrl,
         mode: config.discover || 'crawl',
-        crawlDepth: config.crawlDepth ?? 2,
+        crawlDepth: config.crawlDepth ?? 1,
         maxPages: config.maxPages ?? 100,
         exclude: config.exclude ?? ['/embeds/**', '/sharecards/**'],
         include: config.include ?? [],
@@ -572,7 +572,7 @@ async function runSetup() {
   const config = {
     baseUrl,
     discover,
-    crawlDepth: existing.crawlDepth ?? 2,
+    crawlDepth: existing.crawlDepth ?? 1,
     exclude: skipNonPublic ? exclude : [],
     waitFor: existing.waitFor ?? 'body',
     extraRoutes: existing.extraRoutes ?? [],
