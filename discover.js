@@ -52,6 +52,29 @@ function cleanPath(pathname) {
   return p;
 }
 
+/** Base path of the audit target, always with a single trailing slash. */
+function basePathOf(baseUrl) {
+  let bp = new URL(baseUrl).pathname || '/';
+  if (!bp.endsWith('/')) bp += '/';
+  return bp;
+}
+
+/** Is an origin-absolute path within the base path? */
+function underBase(pathname, basePath) {
+  const b = basePath.replace(/\/+$/, '');
+  if (b === '') return true; // base is the origin root — everything qualifies
+  return pathname === b || pathname.startsWith(b + '/');
+}
+
+/** Convert an origin-absolute path to one relative to the base path.
+ *  e.g. base /p/, path /p/groups/ → /groups/ ; base /p/, path /p/ → / */
+function toRelative(pathname, basePath) {
+  const b = basePath.replace(/\/+$/, '');
+  let rel = b && pathname.startsWith(b) ? pathname.slice(b.length) : pathname;
+  if (!rel.startsWith('/')) rel = '/' + rel;
+  return rel;
+}
+
 /** Derive a readable label from a path. '/' → 'home', '/a/b/' → 'a-b'. */
 function labelFromPath(pathname) {
   const trimmed = pathname.replace(/^\/+|\/+$/g, '');
@@ -120,6 +143,7 @@ async function fromSitemap(baseUrl) {
 async function fromCrawl(baseUrl, { depth = 1, maxPages = 100 } = {}) {
   const start = new URL(baseUrl);
   const origin = start.origin;
+  const basePath = basePathOf(baseUrl);
   const startPath = cleanPath(start.pathname || '/');
 
   const seen = new Set([startPath]);
@@ -153,6 +177,7 @@ async function fromCrawl(baseUrl, { depth = 1, maxPages = 100 } = {}) {
         const cp = cleanPath(u.pathname);
         if (cp.includes('#') || /%23/i.test(cp)) continue; // belt-and-braces
         if (!isAuditablePath(cp)) continue;
+        if (!underBase(cp, basePath)) continue; // stay within the base path
         if (seen.has(cp)) continue;
         seen.add(cp);
         found.push(cp);
@@ -203,6 +228,8 @@ export async function discoverRoutes(opts = {}) {
     throw new Error('discoverRoutes: `baseUrl` is required.');
   }
 
+  const basePath = basePathOf(baseUrl);
+
   let paths = null;
   let usedMode = mode;
 
@@ -222,16 +249,21 @@ export async function discoverRoutes(opts = {}) {
     usedMode = 'crawl';
   }
 
-  // Filter: auditable, include (if any), exclude, dedupe.
+  // Paths are origin-absolute. Keep only those within the base path, then make
+  // them RELATIVE to the base (the spec appends them to baseUrl, which already
+  // contains the base path — otherwise the prefix would be duplicated). Apply
+  // filters + labels on the relative path.
   const kept = [];
   const seen = new Set();
-  for (const p of paths) {
-    if (!isAuditablePath(p)) continue;
-    if (include.length && !matchesAny(p, include)) continue;
-    if (exclude.length && matchesAny(p, exclude)) continue;
-    if (seen.has(p)) continue;
-    seen.add(p);
-    kept.push(p);
+  for (const abs of paths) {
+    if (!underBase(abs, basePath)) continue;
+    const rel = toRelative(abs, basePath);
+    if (!isAuditablePath(rel)) continue;
+    if (include.length && !matchesAny(rel, include)) continue;
+    if (exclude.length && matchesAny(rel, exclude)) continue;
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    kept.push(rel);
   }
   kept.sort((a, b) => (a === '/' ? -1 : b === '/' ? 1 : a.localeCompare(b)));
 
