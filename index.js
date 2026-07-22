@@ -590,18 +590,56 @@ async function runSetup() {
     })
   );
 
-  // Discovery defaults to `auto`: use the site's sitemap.xml if it has one,
-  // otherwise audit just the URL you gave (no fragile link-crawling). Power
-  // users can hand-edit `discover` in spectre.config.json to "single",
-  // "sitemap", "crawl", or "manual"; the wizard keeps whatever's already set.
+  // Three user-facing strategies. `auto` uses the sitemap when present and
+  // otherwise audits just this URL (no fragile crawl). `crawl` follows homepage
+  // links (asks for depth). `manual` = your own routes file.
+  const discover = cancelIf(
+    await p.select({
+      message: 'How should Spectre find pages to audit?',
+      options: [
+        {
+          value: 'auto',
+          label: 'Auto — sitemap if the site has one, else just this URL',
+          hint: 'recommended',
+        },
+        {
+          value: 'crawl',
+          label: 'Crawl — follow links from the homepage',
+          hint: 'finds publicly-linked pages',
+        },
+        {
+          value: 'manual',
+          label: 'Manual — I provide a routes file',
+        },
+      ],
+      initialValue:
+        existing.discover === 'crawl' || existing.discover === 'manual' ?
+          existing.discover
+        : 'auto',
+    })
+  );
+
+  let crawlDepth = existing.crawlDepth ?? 1;
+  if (discover === 'crawl') {
+    const d = cancelIf(
+      await p.text({
+        message: 'Crawl depth (link-hops from the homepage)',
+        placeholder: String(crawlDepth),
+        defaultValue: String(crawlDepth),
+        validate: (v) =>
+          /^\d+$/.test(String(v)) ? undefined : 'Must be a whole number',
+      })
+    );
+    crawlDepth = parseInt(d, 10);
+  }
+
   // Embeds + sharecards are excluded by default (edit `exclude` to change).
-  const discover = existing.discover || 'auto';
   const exclude = existing.exclude ?? ['/embeds/**', '/sharecards/**'];
 
   const config = {
     baseUrl,
     discover,
-    crawlDepth: existing.crawlDepth ?? 1,
+    crawlDepth,
     exclude,
     waitFor: existing.waitFor ?? 'body',
     extraRoutes: existing.extraRoutes ?? [],
@@ -617,6 +655,10 @@ async function runSetup() {
     [
       discover === 'manual' ?
         `Provide a routes file (see ${color.dim('routes.example.ts')}).`
+      : discover === 'crawl' ?
+        `Spectre will crawl ${color.cyan(baseUrl)} ${crawlDepth} hop(s) from the\n` +
+        `homepage (embeds & sharecards skipped). Edit routes/excludes in the\n` +
+        `config if anything unwanted slips in.`
       : `Spectre will check ${color.cyan(baseUrl)} for a sitemap and audit those\n` +
         `pages — or just this URL if there's no sitemap (embeds & sharecards skipped).`,
       '',
@@ -674,8 +716,8 @@ function help() {
 ${color.bold('👻 spectre')} — local cross-browser UI audit harness
 
 ${color.bold('Commands:')}
-  ${color.cyan('setup')}       Interactive wizard — set the base URL to audit,
-              saved to spectre.config.json.
+  ${color.cyan('setup')}       Interactive wizard — set the base URL and how pages are
+              found (auto / crawl / manual). Saves spectre.config.json.
   ${color.cyan('devices')}     Add / remove emulated devices from the audit matrix.
   ${color.cyan('(none)')}      Running ${color.dim('spectre')} with no command runs the audit
               (or setup on first run). Auto-cleans + reports + post-mortem.

@@ -58,14 +58,16 @@ site for a `sitemap.xml`: if there is one, it audits those pages (a multi-page
 site); if there isn't, it audits **just the URL you gave it**. No fragile link
 crawling unless you ask for it. Embeds / sharecards are excluded by default.
 
-Set `discover` in the config to change strategy:
+Set `discover` in the config (or pick it in `spectre setup`):
 
 - **`auto`** *(default)* — sitemap if present, else just the given URL.
-- **`single`** — only the given URL, always.
-- **`sitemap`** — read `sitemap.xml` only.
-- **`crawl`** — follow same-origin links from the homepage (opt-in; the least
-  predictable, since it only finds what's linked).
+- **`crawl`** — follow same-origin links from the homepage, `crawlDepth` hops
+  (default 1). Finds publicly-linked pages; if something unwanted slips in, add
+  an `exclude` glob or switch to `manual`.
 - **`manual`** — you provide an explicit routes file (see below).
+
+Two more values are accepted for hand-editing: **`single`** (only the given
+URL) and **`sitemap`** (sitemap only). `auto` already combines those two.
 
 ### `spectre.config.json`
 
@@ -74,7 +76,7 @@ Written by `spectre setup`; edit it any time.
 ```jsonc
 {
   "baseUrl": "http://localhost:4173",   // dev server, preview, or a live URL
-  "discover": "auto",                    // auto | single | sitemap | crawl | manual
+  "discover": "auto",                    // auto | crawl | manual  (also: single, sitemap)
   "crawlDepth": 1,                        // link-hops from homepage (crawl mode only)
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page
