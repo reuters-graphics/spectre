@@ -72,6 +72,9 @@ different strategy? Set `discover` in the config:
   "crawlDepth": 1,                        // link-hops from the homepage (default 1)
   "exclude": ["/embeds/**", "/sharecards/**"],
   "waitFor": "body",                     // default selector to wait for per page
+  "devices": [                            // emulated devices to audit (omit = all 8)
+    // "iphone-15", "desktop-chrome", "desktop-safari"
+  ],
   "extraRoutes": [                        // pages to audit by hand (e.g. an embed)
     // { "path": "/embeds/en/bracket/", "label": "embed-bracket", "waitFor": "main" }
   ],
@@ -145,6 +148,7 @@ opens the report.
 | --- | --- |
 | `npx spectre` | Run the audit (or setup on first run) |
 | `npx spectre setup` | Configure base URL + route discovery (writes `spectre.config.json`) |
+| `npx spectre devices` | Add / remove emulated devices from the audit matrix |
 | `npx spectre menu` | Interactive menu |
 | `npx spectre show-report` | Reopen the last report in your browser |
 | `npx spectre postmortem` | Re-generate the LLM triage prompt for the last sweep |

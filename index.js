@@ -145,6 +145,24 @@ function loadConfig() {
 }
 
 /**
+ * The emulated device matrix, mirroring the project names in
+ * playwright.local.config.ts. `spectre devices` lets the user pick a subset;
+ * the selection is stored in spectre.config.json `devices` and passed to
+ * Playwright via SPECTRE_DEVICES.
+ */
+const DEVICES = [
+  { value: 'iphone-15', label: 'iPhone 15' },
+  { value: 'iphone-se', label: 'iPhone SE' },
+  { value: 'pixel-7', label: 'Pixel 7' },
+  { value: 'galaxy-s9', label: 'Galaxy S9+' },
+  { value: 'ipad-mini', label: 'iPad Mini' },
+  { value: 'desktop-chrome', label: 'Desktop Chrome' },
+  { value: 'desktop-safari', label: 'Desktop Safari' },
+  { value: 'desktop-firefox', label: 'Desktop Firefox' },
+];
+const ALL_DEVICE_VALUES = DEVICES.map((d) => d.value);
+
+/**
  * Environment handed to every child process (Playwright, report.js,
  * postmortem.js) so they all resolve the same project root, output dir and
  * routes file regardless of their own __dirname.
@@ -360,6 +378,11 @@ async function runLocalAudit(rest) {
     extraEnv.AUDIT_BASE_URL = baseUrl;
   }
 
+  // Limit the device matrix if the project picked a subset (`spectre devices`).
+  if (Array.isArray(config.devices) && config.devices.length) {
+    extraEnv.SPECTRE_DEVICES = config.devices.join(',');
+  }
+
   p.log.info(
     color.dim('Running audit — Playwright emulated devices, no account needed.')
   );
@@ -492,6 +515,11 @@ async function runMenu() {
           hint: 'pick a base URL, save spectre.config.json',
         },
         {
+          value: 'devices',
+          label: '📱 Choose devices',
+          hint: 'add / remove emulated devices from the matrix',
+        },
+        {
           value: 'local',
           label: '💻 Run audit (emulated devices)',
           hint: 'Playwright device descriptors — free, no account',
@@ -519,6 +547,9 @@ async function runMenu() {
     case 'setup':
       p.outro('');
       return runSetup();
+    case 'devices':
+      p.outro('');
+      return runDevices();
     case 'local':
       p.outro('');
       return runLocalAudit([]);
@@ -599,6 +630,45 @@ async function runSetup() {
 }
 
 // ---------------------------------------------------------------------------
+// `devices` — choose which emulated devices to audit. Saved to
+// spectre.config.json `devices`; empty/all = the full matrix.
+// ---------------------------------------------------------------------------
+async function runDevices() {
+  p.intro(color.bgCyan(color.black(' spectre · devices ')));
+  const config = loadConfig();
+  const current =
+    Array.isArray(config.devices) && config.devices.length ?
+      config.devices.filter((d) => ALL_DEVICE_VALUES.includes(d))
+    : ALL_DEVICE_VALUES;
+
+  const picked = cancelIf(
+    await p.multiselect({
+      message: 'Which devices should Spectre audit? (Space toggles, Enter confirms)',
+      options: DEVICES,
+      initialValues: current,
+      required: true,
+    })
+  );
+
+  const next = { ...config, devices: picked };
+  fs.writeFileSync(CONFIG_JSON, JSON.stringify(next, null, 2) + '\n');
+  p.log.success(
+    color.green('✓ Saved ') +
+      color.bold(String(picked.length)) +
+      ` device(s) to ` +
+      color.cyan('spectre.config.json')
+  );
+  if (!config.baseUrl) {
+    p.log.info(
+      'No base URL set yet — run ' +
+        color.cyan('spectre setup') +
+        ' before auditing.'
+    );
+  }
+  p.outro(color.green('Done.'));
+}
+
+// ---------------------------------------------------------------------------
 // help
 // ---------------------------------------------------------------------------
 function help() {
@@ -608,6 +678,7 @@ ${color.bold('👻 spectre')} — local cross-browser UI audit harness
 ${color.bold('Commands:')}
   ${color.cyan('setup')}       Interactive wizard — set a base URL + how routes are
               discovered (sitemap/crawl), saved to spectre.config.json.
+  ${color.cyan('devices')}     Add / remove emulated devices from the audit matrix.
   ${color.cyan('(none)')}      Running ${color.dim('spectre')} with no command runs the audit
               (or setup on first run). Auto-cleans + reports + post-mortem.
   ${color.cyan('local')}       Alias of the default — run the audit.
@@ -655,6 +726,9 @@ const [, , subcommand, ...rest] = process.argv;
         break;
       case 'setup':
         await runSetup();
+        break;
+      case 'devices':
+        await runDevices();
         break;
       case 'show-report':
       case 'show':

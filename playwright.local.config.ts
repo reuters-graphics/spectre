@@ -90,38 +90,23 @@ export default defineConfig({
   // Each project = one "device" the audit runs against. Names are
   // slugified by audit.spec.ts (project.name → `deviceSlug()`) so the
   // screenshots land in `logs/screenshots/<device>/`.
-  projects: [
-    {
-      name: 'iphone-15',
-      use: { ...devices['iPhone 15'] },
-    },
-    {
-      name: 'iphone-se',
-      use: { ...devices['iPhone SE'] },
-    },
-    {
-      name: 'pixel-7',
-      use: { ...devices['Pixel 7'] },
-    },
-    {
-      name: 'galaxy-s9',
-      use: { ...devices['Galaxy S9+'] },
-    },
-    {
-      name: 'ipad-mini',
-      use: { ...devices['iPad Mini'] },
-    },
-    {
-      name: 'desktop-chrome',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'desktop-safari',
-      use: { ...devices['Desktop Safari'] },
-    },
-    {
-      name: 'desktop-firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-  ],
+  // SPECTRE_DEVICES (comma-separated project names) filters this matrix — set
+  // by the CLI from spectre.config.json `devices`. Empty = run them all.
+  projects: (() => {
+    const all = [
+      { name: 'iphone-15', use: { ...devices['iPhone 15'] } },
+      { name: 'iphone-se', use: { ...devices['iPhone SE'] } },
+      { name: 'pixel-7', use: { ...devices['Pixel 7'] } },
+      { name: 'galaxy-s9', use: { ...devices['Galaxy S9+'] } },
+      { name: 'ipad-mini', use: { ...devices['iPad Mini'] } },
+      { name: 'desktop-chrome', use: { ...devices['Desktop Chrome'] } },
+      { name: 'desktop-safari', use: { ...devices['Desktop Safari'] } },
+      { name: 'desktop-firefox', use: { ...devices['Desktop Firefox'] } },
+    ];
+    const wanted = (process.env.SPECTRE_DEVICES || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return wanted.length ? all.filter((p) => wanted.includes(p.name)) : all;
+  })(),
 });
