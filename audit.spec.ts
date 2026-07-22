@@ -440,7 +440,11 @@ for (const route of ROUTES) {
     ensureDir(deviceScreenDir);
     ensureDir(deviceReportDir);
 
-    const url = `${BASE_URL}${route.path}`;
+    // Join base + route path without doubling the slash (base may or may not
+    // have a trailing slash; route paths start with '/').
+    const url =
+      BASE_URL.replace(/\/+$/, '') +
+      (route.path.startsWith('/') ? route.path : `/${route.path}`);
     const { consoleLog, networkFailures } = attachListeners(page);
     const errors: string[] = [];
     const screenshots: string[] = [];
