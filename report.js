@@ -539,11 +539,35 @@ try {
   /* best effort — HTML still renders without postmortem */
 }
 
+// Regression diff: read the PREVIOUS run's summary before we overwrite it, and
+// persist per-route issue counts so the next run can diff against this one.
+let prevSummary = null;
+try {
+  prevSummary = JSON.parse(fs.readFileSync(OUT_JSON, 'utf8'));
+} catch {
+  /* first run — no previous report.json */
+}
+summary.routeIssues = {};
+for (const route of orderedRoutes) {
+  const slot = byRoute.get(route);
+  let n = 0;
+  for (const device of Object.keys(slot.devices || {})) {
+    const r = slot.devices[device];
+    n +=
+      (r._consoleErrors?.length || 0) +
+      (r.networkFailures?.length || 0) +
+      (r.overflow?.length || 0) +
+      (r._severeAxe?.length || 0) +
+      (r.errors?.length || 0);
+  }
+  summary.routeIssues[route] = n;
+}
+
 fs.writeFileSync(OUT_MD, md.join('\n'));
 fs.writeFileSync(OUT_JSON, JSON.stringify(summary, null, 2));
 fs.writeFileSync(
   OUT_HTML,
-  renderHtml(summary, byRoute, orderedRoutes, postmortem)
+  renderHtml(summary, byRoute, orderedRoutes, postmortem, prevSummary)
 );
 
 const logLine = `[${summary.generatedAt}] devices=${devices.length} routes=${orderedRoutes.length} consoleErrors=${summary.totals.consoleErrors} networkFailures=${summary.totals.networkFailures} overflow=${summary.totals.overflowOffenders} axeSevere=${summary.totals.axeSevere} runErrors=${summary.totals.runErrors}\n`;
@@ -577,11 +601,19 @@ function htmlEscape(s) {
     .replace(/'/g, '&#39;');
 }
 
-function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
+function renderHtml(summary, byRoute, orderedRoutes, postmortem, prevSummary) {
   const deviceList = Object.keys(summary.byDevice).sort();
 
   // ---- Verdict (heuristic from totals) --------------------------------------
   const t = summary.totals;
+  const prevT = prevSummary && prevSummary.totals;
+  const delta = (key) => {
+    if (!prevT) return '';
+    const d = (t[key] || 0) - (prevT[key] || 0);
+    if (d === 0) return '';
+    const up = d > 0;
+    return ` <span class="delta ${up ? 'up' : 'down'}" title="vs last run">${up ? '▲' : '▼'}${Math.abs(d)}</span>`;
+  };
   const verdictLevel =
     t.runErrors > 0 || t.consoleErrors > 0 ? 'red'
     : t.networkFailures > 0 || t.axeSevere > 0 || t.overflowOffenders > 0 ?
@@ -592,17 +624,25 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
     amber: '🟡 Ship with caveats',
     green: '🟢 All clear',
   }[verdictLevel];
+  const vsLast =
+    prevSummary && prevSummary.generatedAt ?
+      `<span class="vs-last" title="Compared with the previous run">vs ${htmlEscape(prevSummary.generatedAt)}</span>`
+    : '';
   const verdictHtml = `
     <div class="verdict ${verdictLevel}">
       <span class="badge">${verdictLabel}</span>
       <span class="counts">
-        <span><b>${t.runErrors}</b> run errors</span>
-        <span><b>${t.consoleErrors}</b> console</span>
-        <span><b>${t.networkFailures}</b> network</span>
-        <span><b>${t.overflowOffenders}</b> overflow</span>
-        <span><b>${t.axeSevere}</b> a11y severe</span>
+        <span><b>${t.runErrors}</b> run errors${delta('runErrors')}</span>
+        <span><b>${t.consoleErrors}</b> console${delta('consoleErrors')}</span>
+        <span><b>${t.networkFailures}</b> network${delta('networkFailures')}</span>
+        <span><b>${t.overflowOffenders}</b> overflow${delta('overflowOffenders')}</span>
+        <span><b>${t.axeSevere}</b> a11y severe${delta('axeSevere')}</span>
       </span>
+      ${vsLast}
     </div>`;
+
+  const prevRouteIssues = (prevSummary && prevSummary.routeIssues) || null;
+  const routeIssues = summary.routeIssues || {};
 
   // ---- Filter toolbar -------------------------------------------------------
   const filtersHtml = `
@@ -730,10 +770,12 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
           if (r._severeAxe?.length) {
             blocks.push(
               `<details data-type="a11y" data-sev="bad"><summary class="bad">♿ Axe severe (${r._severeAxe.length})</summary><ul>${r._severeAxe
-                .map(
-                  (v) =>
-                    `<li><strong>${htmlEscape(v.impact)}</strong> <code>${htmlEscape(v.id)}</code> — ${htmlEscape(v.help || '')} (${v.nodes?.length ?? 0} nodes)</li>`
-                )
+                .map((v) => {
+                  const target = Array.isArray(v.nodes?.[0]?.target)
+                    ? v.nodes[0].target.join(' ')
+                    : '';
+                  return `<li><strong>${htmlEscape(v.impact)}</strong> <code>${htmlEscape(v.id)}</code> — ${htmlEscape(v.help || '')} (${v.nodes?.length ?? 0} nodes)${v.helpUrl ? ` <a href="${htmlEscape(v.helpUrl)}" target="_blank" rel="noopener">docs ↗</a>` : ''}${target ? `<br><span class="dim">e.g. <code>${htmlEscape(target)}</code></span>` : ''}</li>`;
+                })
                 .join('')}</ul></details>`
             );
           }
@@ -745,10 +787,25 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
         })
         .join('');
 
+      // Regression badge vs. last run.
+      let regBadge = '';
+      if (prevRouteIssues) {
+        const cur = routeIssues[route] || 0;
+        const prv = prevRouteIssues[route];
+        if (prv === undefined) regBadge = `<span class="reg new">new route</span>`;
+        else if (cur > prv)
+          regBadge = `<span class="reg worse" title="vs last run">▲ ${cur - prv} new</span>`;
+        else if (cur < prv)
+          regBadge = `<span class="reg better" title="vs last run">▼ ${prv - cur} fixed</span>`;
+      }
+
       return `
         <section class="route" id="route-${htmlEscape(route)}">
-          <h2><code>${htmlEscape(route)}</code></h2>
-          ${slot.url ? `<p class="url">🔗 <a href="${htmlEscape(slot.url)}" target="_blank" rel="noopener">${htmlEscape(slot.url)}</a></p>` : ''}
+          <h2>
+            <a class="anchor" href="#route-${htmlEscape(route)}" aria-label="Link to this route">#</a>
+            <code>${htmlEscape(route)}</code>${regBadge}
+          </h2>
+          ${slot.url ? `<p class="url">🔗 <a href="${htmlEscape(slot.url)}" target="_blank" rel="noopener">${htmlEscape(slot.url)}</a> <button class="copy-btn" type="button" data-copy="${htmlEscape(slot.url)}" title="Copy URL">⧉</button></p>` : ''}
           <div class="toolbar">
             <h3 style="margin:0;">Screenshots</h3>
             <div class="view-toggle" data-route="${htmlEscape(route)}">
@@ -1004,6 +1061,44 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
   .filters .muted { font-size: 12px; color: var(--dim); }
   details[hidden], section.route[hidden] { display: none !important; }
   .route-empty { color: var(--good); font-size: 13px; margin: 8px 0; }
+
+  /* Regression deltas + badges */
+  .delta { font-size: 12px; font-weight: 700; }
+  .delta.up { color: var(--bad); }
+  .delta.down { color: var(--good); }
+  .verdict .vs-last { margin-left: auto; font-size: 11px; color: var(--dim); }
+  .reg { font-size: 11px; font-weight: 700; margin-left: 10px; padding: 2px 8px; border-radius: 999px; vertical-align: middle; }
+  .reg.new { color: var(--dim); border: 1px solid var(--border); }
+  .reg.worse { color: #fff; background: var(--bad); }
+  .reg.better { color: #fff; background: var(--good); }
+
+  /* Anchor + copy affordances */
+  h2 .anchor { color: var(--dim); text-decoration: none; opacity: 0; margin-right: 6px; font-weight: 400; }
+  section.route:hover h2 .anchor { opacity: 1; }
+  .copy-btn {
+    background: none; border: 1px solid var(--border); color: var(--dim);
+    border-radius: 4px; cursor: pointer; font-size: 12px; padding: 0 6px; line-height: 1.6;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--good); color: var(--good); }
+
+  /* Lightbox */
+  dialog.lightbox {
+    border: 0; padding: 0; background: transparent; max-width: 96vw; max-height: 96vh;
+  }
+  dialog.lightbox::backdrop { background: rgba(0,0,0,.82); }
+  .lightbox .lb-img { max-width: 90vw; max-height: 82vh; display: block; margin: 0 auto; background: #fff; border-radius: 6px; }
+  .lightbox .lb-cap { color: #fff; text-align: center; font-size: 13px; margin-top: 10px; }
+  .lightbox button {
+    position: fixed; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 8px;
+    font-size: 28px; width: 46px; height: 60px; cursor: pointer;
+  }
+  .lightbox button:hover { background: var(--accent); }
+  .lightbox .lb-prev { left: 2vw; }
+  .lightbox .lb-next { right: 2vw; }
+  .lightbox .lb-close { top: 3vh; right: 3vw; transform: none; width: 44px; height: 44px; font-size: 20px; border-radius: 999px; }
+  .shot a { cursor: zoom-in; }
 </style>
 </head>
 <body>
@@ -1350,6 +1445,91 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
     }
   });
   apply();
+})();
+</script>
+<dialog id="lightbox" class="lightbox">
+  <button class="lb-close" aria-label="Close">✕</button>
+  <button class="lb-prev" aria-label="Previous">‹</button>
+  <img class="lb-img" alt="">
+  <button class="lb-next" aria-label="Next">›</button>
+  <div class="lb-cap"></div>
+</dialog>
+<script>
+/* Lightbox, copy buttons, keyboard nav. */
+(function () {
+  const lb = document.getElementById('lightbox');
+  if (lb && lb.showModal) {
+    const img = lb.querySelector('.lb-img');
+    const cap = lb.querySelector('.lb-cap');
+    let group = [];
+    let idx = 0;
+    function show() {
+      const a = group[idx];
+      if (!a) return;
+      img.src = a.getAttribute('href');
+      const fig = a.closest('figure');
+      const fc = fig && fig.querySelector('figcaption');
+      cap.textContent = fc ? fc.textContent.trim() : '';
+    }
+    document.querySelectorAll('.gallery').forEach((g) => {
+      const anchors = [...g.querySelectorAll('a')];
+      anchors.forEach((a, i) =>
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          group = anchors;
+          idx = i;
+          show();
+          lb.showModal();
+        })
+      );
+    });
+    lb.querySelector('.lb-next').addEventListener('click', () => {
+      idx = (idx + 1) % group.length;
+      show();
+    });
+    lb.querySelector('.lb-prev').addEventListener('click', () => {
+      idx = (idx - 1 + group.length) % group.length;
+      show();
+    });
+    lb.querySelector('.lb-close').addEventListener('click', () => lb.close());
+    lb.addEventListener('click', (e) => {
+      if (e.target === lb) lb.close();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!lb.open) return;
+      if (e.key === 'ArrowRight') { idx = (idx + 1) % group.length; show(); }
+      else if (e.key === 'ArrowLeft') { idx = (idx - 1 + group.length) % group.length; show(); }
+    });
+  }
+
+  // Copy buttons
+  document.querySelectorAll('.copy-btn[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy);
+        const o = btn.textContent;
+        btn.textContent = '✓';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = o; btn.classList.remove('copied'); }, 1200);
+      } catch {}
+    });
+  });
+
+  // Keyboard: j/k between routes, e to expand/collapse all
+  let ri = -1;
+  document.addEventListener('keydown', (e) => {
+    if (lb && lb.open) return;
+    const tag = (document.activeElement && document.activeElement.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    const rs = [...document.querySelectorAll('section.route:not([hidden])')];
+    if (e.key === 'j') { ri = Math.min(ri + 1, rs.length - 1); rs[ri] && rs[ri].scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    else if (e.key === 'k') { ri = Math.max(ri - 1, 0); rs[ri] && rs[ri].scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    else if (e.key === 'e') {
+      const all = [...document.querySelectorAll('section.route details')];
+      const anyOpen = all.some((d) => d.open);
+      all.forEach((d) => (d.open = !anyOpen));
+    }
+  });
 })();
 </script>
 </body>

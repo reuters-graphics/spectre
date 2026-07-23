@@ -22,6 +22,19 @@ Captures per route × device:
 
 ---
 
+## The report
+
+The audit opens a browsable HTML report — a ship/no-ship verdict, a filter
+toolbar, per-route findings, screenshot galleries with a lightbox, pixel-diffs,
+regression deltas vs. the last run, and an LLM triage prompt. Reuters-styled,
+light + dark.
+
+| Light | Dark |
+| --- | --- |
+| ![Spectre report — light](docs/screenshots/report-light.png) | ![Spectre report — dark](docs/screenshots/report-dark.png) |
+
+---
+
 ## 📦 Install
 
 ```bash
