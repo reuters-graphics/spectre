@@ -580,6 +580,47 @@ function htmlEscape(s) {
 function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
   const deviceList = Object.keys(summary.byDevice).sort();
 
+  // ---- Verdict (heuristic from totals) --------------------------------------
+  const t = summary.totals;
+  const verdictLevel =
+    t.runErrors > 0 || t.consoleErrors > 0 ? 'red'
+    : t.networkFailures > 0 || t.axeSevere > 0 || t.overflowOffenders > 0 ?
+      'amber'
+    : 'green';
+  const verdictLabel = {
+    red: '🔴 Do not ship',
+    amber: '🟡 Ship with caveats',
+    green: '🟢 All clear',
+  }[verdictLevel];
+  const verdictHtml = `
+    <div class="verdict ${verdictLevel}">
+      <span class="badge">${verdictLabel}</span>
+      <span class="counts">
+        <span><b>${t.runErrors}</b> run errors</span>
+        <span><b>${t.consoleErrors}</b> console</span>
+        <span><b>${t.networkFailures}</b> network</span>
+        <span><b>${t.overflowOffenders}</b> overflow</span>
+        <span><b>${t.axeSevere}</b> a11y severe</span>
+      </span>
+    </div>`;
+
+  // ---- Filter toolbar -------------------------------------------------------
+  const filtersHtml = `
+    <div class="filters" id="filters">
+      <div class="group" role="group" aria-label="Finding types">
+        <label><input type="checkbox" data-type="run" checked> Run</label>
+        <label><input type="checkbox" data-type="console" checked> Console</label>
+        <label><input type="checkbox" data-type="network" checked> Network</label>
+        <label><input type="checkbox" data-type="overflow" checked> Overflow</label>
+        <label><input type="checkbox" data-type="a11y" checked> A11y</label>
+      </div>
+      <div class="sep"></div>
+      <label><input type="checkbox" id="errors-only"> Errors only</label>
+      <div class="sep"></div>
+      <input type="search" id="route-search" placeholder="Filter routes…" aria-label="Filter routes">
+      <span class="muted" id="filter-count"></span>
+    </div>`;
+
   const summaryRows = deviceList
     .map((d) => {
       const s = summary.byDevice[d];
@@ -651,12 +692,12 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
           const blocks = [];
           if (r.errors?.length) {
             blocks.push(
-              `<details open><summary class="bad">⚠️ Run errors (${r.errors.length})</summary><ul>${r.errors.map((e) => `<li>${htmlEscape(e)}</li>`).join('')}</ul></details>`
+              `<details open data-type="run" data-sev="bad"><summary class="bad">⚠️ Run errors (${r.errors.length})</summary><ul>${r.errors.map((e) => `<li>${htmlEscape(e)}</li>`).join('')}</ul></details>`
             );
           }
           if (r._consoleErrors?.length) {
             blocks.push(
-              `<details><summary class="bad">❌ Console (${r._consoleErrors.length})</summary><ul>${r._consoleErrors
+              `<details data-type="console" data-sev="bad"><summary class="bad">❌ Console (${r._consoleErrors.length})</summary><ul>${r._consoleErrors
                 .slice(0, 50)
                 .map(
                   (c) =>
@@ -667,7 +708,7 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
           }
           if (r.networkFailures?.length) {
             blocks.push(
-              `<details><summary class="bad">🌐 Network failures (${r.networkFailures.length})</summary><ul>${r.networkFailures
+              `<details data-type="network" data-sev="bad"><summary class="bad">🌐 Network failures (${r.networkFailures.length})</summary><ul>${r.networkFailures
                 .map(
                   (n) =>
                     `<li>${htmlEscape(n.method)} <code>${htmlEscape(n.url)}</code> — ${htmlEscape(n.failure)}</li>`
@@ -677,7 +718,7 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
           }
           if (r.overflow?.length) {
             blocks.push(
-              `<details><summary class="warn">📐 Overflow (${r.overflow.length})</summary><ul>${r.overflow
+              `<details data-type="overflow" data-sev="warn"><summary class="warn">📐 Overflow (${r.overflow.length})</summary><ul>${r.overflow
                 .slice(0, 25)
                 .map(
                   (o) =>
@@ -688,7 +729,7 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
           }
           if (r._severeAxe?.length) {
             blocks.push(
-              `<details><summary class="bad">♿ Axe severe (${r._severeAxe.length})</summary><ul>${r._severeAxe
+              `<details data-type="a11y" data-sev="bad"><summary class="bad">♿ Axe severe (${r._severeAxe.length})</summary><ul>${r._severeAxe
                 .map(
                   (v) =>
                     `<li><strong>${htmlEscape(v.impact)}</strong> <code>${htmlEscape(v.id)}</code> — ${htmlEscape(v.help || '')} (${v.nodes?.length ?? 0} nodes)</li>`
@@ -737,29 +778,35 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Spectre UI Audit — ${htmlEscape(summary.baseUrl || '')}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,400;0,6..12,600;0,6..12,700;1,6..12,400&display=swap" rel="stylesheet">
 <style>
+  /* Reuters Graphics design tokens (graphics-components Theme system). */
   :root {
-    --bg: #0e1116;
-    --panel: #161b22;
-    --border: #30363d;
-    --text: #e6edf3;
-    --dim: #8b949e;
-    --bad: #f85149;
-    --warn: #d29922;
-    --good: #3fb950;
-    --link: #58a6ff;
+    --bg: #2e3440;
+    --panel: #363d4c;
+    --border: rgba(255, 255, 255, .20);
+    --text: #ffffff;
+    --dim: rgba(255, 255, 255, .60);
+    --accent: #ef3c2a;
+    --link: #ff6a45;
+    --bad: #ff5c4d;
+    --warn: #e0a92e;
+    --good: #4cc76e;
   }
   @media (prefers-color-scheme: light) {
     :root {
-      --bg: #ffffff; --panel: #f6f8fa; --border: #d0d7de;
-      --text: #1f2328; --dim: #57606a;
-      --bad: #cf222e; --warn: #9a6700; --good: #1a7f37; --link: #0969da;
+      --bg: #ffffff; --panel: #f5f4f2; --border: #d0d0d0;
+      --text: #404040; --dim: #666666;
+      --accent: #d64000; --link: #d64000;
+      --bad: #cf222e; --warn: #9a6700; --good: #1a7f37;
     }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font: 15px/1.6 "Nunito Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     background: var(--bg);
     color: var(--text);
   }
@@ -923,6 +970,40 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
   .device summary { cursor: pointer; user-select: none; }
   .device ul { margin: 6px 0 8px 18px; padding: 0; }
   .device li { margin: 2px 0; }
+
+  /* Verdict banner */
+  .verdict {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    margin: 0 0 24px; padding: 16px 20px;
+    border: 1px solid var(--border); border-left: 6px solid var(--accent);
+    border-radius: 8px; background: var(--panel);
+  }
+  .verdict .badge { font-size: 15px; font-weight: 700; white-space: nowrap; }
+  .verdict.red .badge { color: var(--bad); }
+  .verdict.amber .badge { color: var(--warn); }
+  .verdict.green .badge { color: var(--good); }
+  .verdict .counts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--dim); }
+  .verdict .counts b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  /* Filter toolbar */
+  .filters {
+    position: sticky; top: 84px; z-index: 5;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin: 0 0 24px; padding: 10px 14px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  }
+  .filters .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .filters label { font-size: 12px; color: var(--text); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .filters input[type="checkbox"] { accent-color: var(--accent); }
+  .filters .sep { width: 1px; align-self: stretch; background: var(--border); }
+  .filters input[type="search"] {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 999px; padding: 5px 12px; font: inherit; font-size: 13px; min-width: 200px;
+  }
+  .filters input[type="search"]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .filters .muted { font-size: 12px; color: var(--dim); }
+  details[hidden], section.route[hidden] { display: none !important; }
+  .route-empty { color: var(--good); font-size: 13px; margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -948,6 +1029,8 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
   </nav>
 </header>
 <main data-baselines='${htmlEscape(JSON.stringify(detectBaselines(deviceList)))}'>
+  ${verdictHtml}
+  ${filtersHtml}
   <h2>Totals by device</h2>
   <table>
     <thead><tr>
@@ -1221,6 +1304,52 @@ function renderHtml(summary, byRoute, orderedRoutes, postmortem) {
       otherImg.style.opacity = (parseInt(alpha.value, 10) / 100).toFixed(2);
     });
   }
+})();
+</script>
+<script>
+/* Filter toolbar: type toggles, errors-only, and route search. */
+(function () {
+  const typeBoxes = [...document.querySelectorAll('#filters input[data-type]')];
+  const errorsOnly = document.getElementById('errors-only');
+  const search = document.getElementById('route-search');
+  const countEl = document.getElementById('filter-count');
+  const routes = [...document.querySelectorAll('section.route')];
+  if (!typeBoxes.length || !search) return;
+
+  function apply() {
+    const enabled = new Set(
+      typeBoxes.filter((b) => b.checked).map((b) => b.dataset.type)
+    );
+    const eo = errorsOnly.checked;
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    for (const sec of routes) {
+      const label = (sec.id || '').replace(/^route-/, '').toLowerCase();
+      const matches = !q || label.includes(q);
+      sec.hidden = !matches;
+      if (matches) visible++;
+      sec.querySelectorAll('details[data-type]').forEach((d) => {
+        const typeOk = enabled.has(d.dataset.type);
+        const sevOk = !eo || d.dataset.sev === 'bad';
+        d.hidden = !(typeOk && sevOk);
+      });
+    }
+    countEl.textContent =
+      q || enabled.size < typeBoxes.length || eo ?
+        visible + ' / ' + routes.length + ' routes'
+      : '';
+  }
+
+  typeBoxes.forEach((b) => b.addEventListener('change', apply));
+  errorsOnly.addEventListener('change', apply);
+  search.addEventListener('input', apply);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== search) {
+      e.preventDefault();
+      search.focus();
+    }
+  });
+  apply();
 })();
 </script>
 </body>
